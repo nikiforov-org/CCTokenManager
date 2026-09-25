@@ -24,9 +24,9 @@
 </p>
 
 Work account, personal account, a client's team plan — Claude Code only knows
-one at a time. CC Token Manager keeps them all and switches Claude Code between
-them in a click. No logging out and back in, no environment variables, no shell
-scripts.
+one at a time. CC Token Manager keeps all your Claude accounts, Pro, Max or
+Team, and switches Claude Code between them in a click. No logging out and back
+in, no environment variables, no shell scripts.
 
 ## Features
 

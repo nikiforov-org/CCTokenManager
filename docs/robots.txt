@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://nikiforov-org.github.io/CCTokenManager/sitemap.xml

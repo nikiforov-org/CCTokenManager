@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CC Token Manager — switch Claude Code between multiple accounts</title>
+<meta name="description" content="A free tray app for macOS, Windows and Linux that keeps multiple Claude accounts — Pro, Max or Team — and switches Claude Code between them in one click. Tokens stay in the system keyring.">
+<link rel="canonical" href="https://nikiforov-org.github.io/CCTokenManager/">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="CC Token Manager">
+<meta property="og:title" content="CC Token Manager — switch Claude Code between multiple accounts">
+<meta property="og:description" content="Keep your work, personal and team Claude accounts and switch Claude Code between them in one click. macOS, Windows and Linux.">
+<meta property="og:url" content="https://nikiforov-org.github.io/CCTokenManager/">
+<meta property="og:image" content="https://nikiforov-org.github.io/CCTokenManager/social.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "CC Token Manager",
+  "description": "A tray app that creates and switches profiles for Claude Code, with the tokens in the system's keyring and nowhere in plain text.",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "macOS 11+, Windows 10, Windows 11, Linux",
+  "url": "https://nikiforov-org.github.io/CCTokenManager/",
+  "downloadUrl": "https://github.com/nikiforov-org/CCTokenManager/releases/latest",
+  "screenshot": "https://nikiforov-org.github.io/CCTokenManager/screenshot.png",
+  "image": "https://nikiforov-org.github.io/CCTokenManager/social.png",
+  "license": "https://www.apache.org/licenses/LICENSE-2.0",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "codeRepository": "https://github.com/nikiforov-org/CCTokenManager"
+}
+</script>
+<style>
+:root{--bg:#f7f4ef;--fg:#1d1a16;--muted:#5f574d;--card:#fff;--line:#e4ddd3;--accent:#d97a00;--btn:#f90;--btnfg:#1d1a16;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#171512;--fg:#f1ece4;--muted:#b3a99c;--card:#211e1a;--line:#36312a;--accent:#ffab3d;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif}
+main{max-width:880px;margin:0 auto;padding:56px 20px 40px}
+header{text-align:center}
+header img.logo{width:96px;height:auto}
+h1{font-size:clamp(34px,6vw,52px);line-height:1.1;margin:18px 0 10px;letter-spacing:-.02em}
+.lead{font-size:clamp(18px,2.6vw,22px);color:var(--muted);margin:0 auto;max-width:640px}
+.lead b{color:var(--accent)}
+.cta{display:inline-block;margin:28px 0 8px;padding:13px 26px;border-radius:10px;background:var(--btn);color:var(--btnfg);font-weight:600;text-decoration:none}
+.cta:hover{filter:brightness(1.05)}
+.os{color:var(--muted);font-size:15px}
+.shot{margin:40px auto 0;max-width:736px;border-radius:12px;overflow:hidden;box-shadow:0 16px 44px rgba(40,25,5,.16),0 0 0 1px var(--line)}
+.shot img{display:block;width:100%;height:auto}
+h2{font-size:26px;margin:64px 0 16px;letter-spacing:-.01em}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}
+.grid div{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.grid b{display:block;margin-bottom:4px}
+.grid span{color:var(--muted);font-size:15.5px}
+ol{padding-left:22px}
+li{margin:6px 0}
+code{font:14.5px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--card);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+.table{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:15.5px}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line)}
+th{color:var(--muted);font-weight:600}
+a{color:var(--accent)}
+footer{margin-top:64px;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:14.5px;text-align:center}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <img class="logo" src="icon.svg" width="96" height="84" alt="CC Token Manager icon">
+  <h1>CC Token Manager</h1>
+  <p class="lead">Switch <b>Claude Code</b> between multiple Claude accounts in one click.</p>
+  <a class="cta" href="https://github.com/nikiforov-org/CCTokenManager/releases/latest">Download for free</a>
+  <div class="os">macOS · Windows · Linux</div>
+  <div class="shot"><img src="screenshot.png" width="736" height="336" alt="The CC Token Manager window: seven profiles in a list, the applied one ticked, and the selected profile's name, hidden token, folder and theme"></div>
+</header>
+
+<p style="margin-top:40px">Work account, personal account, a client's team plan — Claude Code only knows one at a time. CC Token Manager keeps all your Claude accounts, Pro, Max or Team, and switches Claude Code between them in a click. No logging out and back in, no environment variables, no shell scripts.</p>
+
+<h2>Features</h2>
+<div class="grid">
+  <div><b>One click to switch</b><span>Pick a profile, press Apply profile, and every new <code>claude</code>, in every terminal, runs on it.</span></div>
+  <div><b>Each profile is its own world</b><span>Its own history, settings, memory, MCP servers and theme. Nothing leaks from one subscription into another.</span></div>
+  <div><b>Your tokens stay secret</b><span>In the macOS Keychain, Windows Credential Manager or the Linux keyring — never in a plain-text file.</span></div>
+  <div><b>Nothing to undo</b><span>Quit the app and Claude Code is exactly as it was before.</span></div>
+  <div><b>Check before you switch</b><span>Test connection makes sure a token works.</span></div>
+  <div><b>Stays out of the way</b><span>Lives in the menu bar or tray and starts with your computer.</span></div>
+</div>
+
+<h2>Getting started</h2>
+<ol>
+  <li><b>Get a token</b> for each subscription: run <code>claude setup-token</code> while signed in to it.</li>
+  <li><b>Open the app</b> from its icon in the menu bar or tray.</li>
+  <li><b>Add a profile.</b> Press <b>+</b>, give the profile a name and paste its token.</li>
+  <li><b>Apply it.</b> Press <b>Apply profile</b> and start a new Claude Code session.</li>
+</ol>
+
+<h2>Download</h2>
+<div class="table"><table>
+  <tr><th>System</th><th>File</th></tr>
+  <tr><td>macOS 11 or later</td><td><code>.dmg</code></td></tr>
+  <tr><td>Windows 10 or 11 on x64, Windows 11 on Arm</td><td><code>-setup.exe</code></td></tr>
+  <tr><td>Linux on x64</td><td><code>-linux-x64-setup</code></td></tr>
+  <tr><td>Linux on arm64</td><td><code>-linux-arm64-setup</code></td></tr>
+</table></div>
+<p>All of them are on the <a href="https://github.com/nikiforov-org/CCTokenManager/releases/latest">releases page</a>. How to install: <a href="https://github.com/nikiforov-org/CCTokenManager#installation">README</a>.</p>
+
+<footer>
+  <a href="https://github.com/nikiforov-org/CCTokenManager">Source on GitHub</a> · Apache License 2.0
+</footer>
+</main>
+</body>
+</html>
