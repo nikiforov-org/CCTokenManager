@@ -1,0 +1,10 @@
+# Build output.
+CCTokenManager
+/dist/
+builder/windows/payload/
+builder/windows/rsrc_windows_amd64.syso
+builder/linux/payload/
+
+.DS_Store
+# Resource forks macOS leaves beside a file it has rendered or copied.
+._*
