@@ -512,10 +512,12 @@ static NSString *cp_noise(NSString *token) {
     NSMutableArray *out = [NSMutableArray array];
     for (NSMutableDictionary *r in self.rows) {
         // Every flag as it stands; the Go side keeps those turned from their default.
+        // Each goes as true or false: a tick is boxed from a comparison, an int,
+        // which JSON writes as 1 or 0, and Go takes no number for a bool.
         NSMutableDictionary *guards = [NSMutableDictionary dictionary];
         CPFlagList *fl = r[@"guards"];
         [cp_guards enumerateObjectsUsingBlock:^(NSDictionary *gd, NSUInteger i, BOOL *stop) {
-            guards[gd[@"id"]] = fl.on[i];
+            guards[gd[@"id"]] = [fl.on[i] boolValue] ? @YES : @NO;
         }];
         [out addObject:@{@"id":    r[@"id"],
                          @"name":  [r[@"name"] stringValue],
