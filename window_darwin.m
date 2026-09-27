@@ -13,6 +13,8 @@ static NSString *cp_profiles_dir = @"";
 // profile starts with, as the Go side lists them.
 static NSArray  *cp_themes;
 static NSString *cp_default_theme = @"";
+// The flags a profile can set, each an id, the flag, what it does, and its default.
+static NSArray  *cp_guards;
 
 @class CPSecretView;
 
@@ -22,6 +24,7 @@ static NSTextField   *cp_label(NSString *text);
 static NSTextField   *cp_field(NSString *value);
 static NSScrollView  *cp_textarea(CPSecretView **out);
 static NSStackView   *cp_row(NSArray *views);
+static NSFont        *cp_mono(void);
 static CGFloat        cp_gap(void);
 
 // The token's field. Out of focus it shows shading in place of the token, and
@@ -71,6 +74,36 @@ static NSString *cp_noise(NSString *token) {
     BOOL ok = [super resignFirstResponder];
     if (ok) [self show:NO];
     return ok;
+}
+@end
+
+// The flags of one profile, as a list with a box to tick on each row: the flag
+// and what it does beside it.
+@interface CPFlagList : NSObject <NSTableViewDataSource, NSTableViewDelegate>
+@property (strong) NSMutableArray<NSNumber *> *on;
+@end
+
+@implementation CPFlagList
+- (NSInteger)numberOfRowsInTableView:(NSTableView *)tv { return self.on.count; }
+
+- (NSView *)tableView:(NSTableView *)tv viewForTableColumn:(NSTableColumn *)col row:(NSInteger)row {
+    NSDictionary *g = cp_guards[row];
+    if ([[col identifier] isEqualToString:@"on"]) {
+        NSButton *c = [NSButton checkboxWithTitle:@"" target:self action:@selector(tick:)];
+        [c setTag:row];
+        [c setState:[self.on[row] boolValue] ? NSControlStateValueOn : NSControlStateValueOff];
+        return c;
+    }
+    BOOL flag = [[col identifier] isEqualToString:@"flag"];
+    NSTextField *t = [NSTextField labelWithString:flag ? g[@"flag"] : g[@"desc"]];
+    if (flag) [t setFont:cp_mono()];
+    [t setLineBreakMode:NSLineBreakByTruncatingTail];
+    [t setToolTip:[NSString stringWithFormat:@"%@\n%@", g[@"flag"], g[@"desc"]]];
+    return t;
+}
+
+- (void)tick:(NSButton *)c {
+    self.on[[c tag]] = @([c state] == NSControlStateValueOn);
 }
 @end
 
@@ -225,7 +258,8 @@ static NSString *cp_noise(NSString *token) {
 - (void)listAction:(NSSegmentedControl *)sender {
     if ([sender selectedSegment] == 0) {
         NSDictionary *blank = @{@"id": [[NSUUID UUID] UUIDString], @"name": @"New profile",
-                                @"token": @"", @"dir": @"", @"theme": cp_default_theme};
+                                @"token": @"", @"dir": @"", @"theme": cp_default_theme,
+                                @"guards": @{}};
         [self.rows addObject:[self buildDetailFor:blank]];
         [self reloadListSelecting:self.rows.count - 1];
         [self.window makeFirstResponder:self.rows.lastObject[@"name"]];
@@ -319,6 +353,19 @@ static NSString *cp_noise(NSString *token) {
     }
     [theme selectItemAtIndex:[theme indexOfItemWithRepresentedObject:p[@"theme"]]];
 
+    // The flags the profile sets, each as the profile has it, or else as by
+    // default.
+    NSDictionary *chosen = [p[@"guards"] isKindOfClass:[NSDictionary class]] ? p[@"guards"] : @{};
+    CPFlagList *flags = [[CPFlagList alloc] init];
+    flags.on = [NSMutableArray array];
+    for (NSDictionary *gd in cp_guards) {
+        id v = chosen[gd[@"id"]];
+        [flags.on addObject:@(v ? [v boolValue] : [gd[@"on"] boolValue])];
+    }
+    // The flags are listed in a window of their own, which this opens.
+    NSButton *advanced = [NSButton buttonWithTitle:@"Advanced…" target:self
+                                            action:@selector(advanced:)];
+
     // One grid for the whole form, so every label shares a column and lines up
     // with the control beside it.
     NSGridView *g = [NSGridView gridViewWithViews:@[
@@ -328,10 +375,13 @@ static NSString *cp_noise(NSString *token) {
                                                             action:@selector(test:)]],
         @[cp_label(@"Profile folder"),   dirRow],
         @[cp_label(@"Profile theme"),    theme],
+        @[[NSGridCell emptyContentView], advanced],
     ]];
     [g setRowAlignment:NSGridRowAlignmentFirstBaseline];
     [[g columnAtIndex:0] setXPlacement:NSGridCellPlacementTrailing];
     [[g columnAtIndex:1] setXPlacement:NSGridCellPlacementFill];
+    // Advanced… is as wide as its title, at the right edge of the form.
+    [[g cellForView:advanced] setXPlacement:NSGridCellPlacementTrailing];
     // A box of text has no single baseline, so its label is put on the first
     // line inside it: the top of the box is a border's width higher than that.
     [[g rowAtIndex:1] setRowAlignment:NSGridRowAlignmentNone];
@@ -378,20 +428,102 @@ static NSString *cp_noise(NSString *token) {
     [box setHidden:YES];
 
     return [@{@"view": box, @"id": pid, @"name": name, @"token": token, @"dir": dir,
-              @"theme": theme, @"watch": watch, @"apply": apply} mutableCopy];
+              @"theme": theme, @"guards": flags, @"watch": watch, @"apply": apply} mutableCopy];
 }
 
 // --- actions ---
 
+// advanced opens the flags of the profile on screen, alphabetically, in a
+// sheet of their own. Done keeps the ticks as they are; Cancel puts them back
+// as they were when it opened.
+- (void)advanced:(id)sender {
+    NSMutableDictionary *r = self.rows[[self.table selectedRow]];
+    CPFlagList *flags = r[@"guards"];
+    NSArray *was = [flags.on copy];
+
+    NSTableView *ft = [[NSTableView alloc] init];
+    NSTableColumn *onCol = [[NSTableColumn alloc] initWithIdentifier:@"on"];
+    [onCol setTitle:@""];
+    [onCol setWidth:22];
+    [onCol setMinWidth:22];
+    [onCol setMaxWidth:22];
+    NSTableColumn *flagCol = [[NSTableColumn alloc] initWithIdentifier:@"flag"];
+    [flagCol setTitle:@"Flag"];
+    [flagCol setWidth:420];
+    NSTableColumn *descCol = [[NSTableColumn alloc] initWithIdentifier:@"desc"];
+    [descCol setTitle:@"Description"];
+    [descCol setWidth:540];
+    for (NSTableColumn *col in @[onCol, flagCol, descCol]) [ft addTableColumn:col];
+    [ft setColumnAutoresizingStyle:NSTableViewLastColumnOnlyAutoresizingStyle];
+    [ft setUsesAlternatingRowBackgroundColors:YES];
+    [ft setDataSource:flags];
+    [ft setDelegate:flags];
+    NSScrollView *list = [[NSScrollView alloc] init];
+    [list setDocumentView:ft];
+    [list setHasVerticalScroller:YES];
+    [list setBorderType:NSBezelBorder];
+
+    NSButton *cancel = [NSButton buttonWithTitle:@"Cancel" target:nil action:nil];
+    NSButton *done = [NSButton buttonWithTitle:@"Done" target:nil action:nil];
+    [cancel setKeyEquivalent:@"\033"];
+    [done setKeyEquivalent:@"\r"];
+    NSStackView *buttons = cp_row(@[]);
+    [buttons addView:cancel inGravity:NSStackViewGravityTrailing];
+    [buttons addView:done inGravity:NSStackViewGravityTrailing];
+
+    NSWindow *sheet = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 1020, 600)
+        styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskResizable)
+        backing:NSBackingStoreBuffered defer:NO];
+    [sheet setTitle:[NSString stringWithFormat:@"Advanced: %@", [r[@"name"] stringValue]]];
+    [sheet setContentMinSize:NSMakeSize(600, 320)];
+    NSView *cv = [sheet contentView];
+    for (NSView *v in @[list, buttons]) {
+        [v setTranslatesAutoresizingMaskIntoConstraints:NO];
+        [cv addSubview:v];
+    }
+    CGFloat m = cp_gap() * 2;
+    [NSLayoutConstraint activateConstraints:@[
+        [list.topAnchor constraintEqualToAnchor:cv.topAnchor constant:m],
+        [list.leadingAnchor constraintEqualToAnchor:cv.leadingAnchor constant:m],
+        [list.trailingAnchor constraintEqualToAnchor:cv.trailingAnchor constant:-m],
+        [buttons.topAnchor constraintEqualToAnchor:list.bottomAnchor constant:m],
+        [buttons.leadingAnchor constraintEqualToAnchor:cv.leadingAnchor constant:m],
+        [buttons.trailingAnchor constraintEqualToAnchor:cv.trailingAnchor constant:-m],
+        [buttons.bottomAnchor constraintEqualToAnchor:cv.bottomAnchor constant:-m],
+    ]];
+    [cancel setTarget:self];
+    [cancel setAction:@selector(endAdvanced:)];
+    [cancel setTag:NSModalResponseCancel];
+    [done setTarget:self];
+    [done setAction:@selector(endAdvanced:)];
+    [done setTag:NSModalResponseOK];
+    [self.window beginSheet:sheet completionHandler:^(NSModalResponse rc) {
+        if (rc != NSModalResponseOK) [flags.on setArray:was];
+    }];
+}
+
+- (void)endAdvanced:(NSButton *)sender {
+    NSWindow *sheet = [sender window];
+    [self.window endSheet:sheet returnCode:[sender tag]];
+}
+
 // Values are read out of the controls, so what is on screen is what is stored.
 - (NSString *)profilesJSON {
     NSMutableArray *out = [NSMutableArray array];
-    for (NSMutableDictionary *r in self.rows)
+    for (NSMutableDictionary *r in self.rows) {
+        // Every flag as it stands; the Go side keeps those turned from their default.
+        NSMutableDictionary *guards = [NSMutableDictionary dictionary];
+        CPFlagList *fl = r[@"guards"];
+        [cp_guards enumerateObjectsUsingBlock:^(NSDictionary *gd, NSUInteger i, BOOL *stop) {
+            guards[gd[@"id"]] = fl.on[i];
+        }];
         [out addObject:@{@"id":    r[@"id"],
                          @"name":  [r[@"name"] stringValue],
                          @"token": [(CPSecretView *)r[@"token"] token],
                          @"dir":   [r[@"dir"] stringValue],
-                         @"theme": [[r[@"theme"] selectedItem] representedObject]}];
+                         @"theme": [[r[@"theme"] selectedItem] representedObject],
+                         @"guards": guards}];
+    }
     NSData *d = [NSJSONSerialization dataWithJSONObject:out options:0 error:nil];
     return [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding];
 }
@@ -659,13 +791,15 @@ static void cp_menubar_item(CPController *c, const void *iconData, int iconLen) 
 void cp_run_settings(const char *profilesJSON, const char *activeID,
                      const char *appliedID, const char *profilesDir,
                      const char *themesJSON, const char *defaultTheme,
-                     const char *initialStatus, const void *iconData, int iconLen,
-                     int asked) {
+                     const char *guardsJSON, const char *initialStatus,
+                     const void *iconData, int iconLen, int asked) {
     @autoreleasepool {
         cp_profiles_dir = [NSString stringWithUTF8String:profilesDir];
         cp_themes = [NSJSONSerialization JSONObjectWithData:
             [NSData dataWithBytes:themesJSON length:strlen(themesJSON)] options:0 error:nil];
         cp_default_theme = [NSString stringWithUTF8String:defaultTheme];
+        cp_guards = [NSJSONSerialization JSONObjectWithData:
+            [NSData dataWithBytes:guardsJSON length:strlen(guardsJSON)] options:0 error:nil];
         [NSApplication sharedApplication];
         CPController *c = [[CPController alloc] init];
         [NSApp setDelegate:c];

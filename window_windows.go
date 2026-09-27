@@ -35,6 +35,8 @@ var (
 	pDispatchMessageW           = user32.NewProc("DispatchMessageW")
 	pDrawTextW                  = user32.NewProc("DrawTextW")
 	pEnableWindow               = user32.NewProc("EnableWindow")
+	pDestroyWindow              = user32.NewProc("DestroyWindow")
+	pGetWindowRect              = user32.NewProc("GetWindowRect")
 	pFillRect                   = user32.NewProc("FillRect")
 	pFindWindowW                = user32.NewProc("FindWindowW")
 	pGetClientRect              = user32.NewProc("GetClientRect")
@@ -79,8 +81,9 @@ var (
 	pSHCreateItemFromParsingName = shell32.NewProc("SHCreateItemFromParsingName")
 	pShellNotifyIconW            = shell32.NewProc("Shell_NotifyIconW")
 
-	pLoadIconMetric = comctl32.NewProc("LoadIconMetric")
-	pTaskDialog     = comctl32.NewProc("TaskDialog")
+	pLoadIconMetric       = comctl32.NewProc("LoadIconMetric")
+	pTaskDialog           = comctl32.NewProc("TaskDialog")
+	pInitCommonControlsEx = comctl32.NewProc("InitCommonControlsEx")
 
 	pCoCreateInstance = ole32.NewProc("CoCreateInstance")
 	pCoInitializeEx   = ole32.NewProc("CoInitializeEx")
@@ -113,6 +116,8 @@ const (
 	idTheme
 	idSave
 	idApply
+	idAdvanced
+	idFlags
 )
 
 const (
@@ -156,20 +161,39 @@ const (
 	wmDpiChanged      = 0x02E0
 	dmGetDefID        = 0x0400
 
-	lbAddString     = 0x0180
-	lbDeleteString  = 0x0182
-	lbSetCurSel     = 0x0186
-	lbGetCurSel     = 0x0188
-	lbSetItemHeight = 0x01A0
-	lbnSelChange    = 1
-	cbAddString     = 0x0143
-	cbGetCurSel     = 0x0147
-	cbSetCurSel     = 0x014E
-	enChange        = 0x0300
-	enSetFocus      = 0x0100
-	enKillFocus     = 0x0200
-	emSetSel        = 0x00B1
-	emSetCueBanner  = 0x1501
+	lbAddString = 0x0180
+	// The list of flags: a list view in report view, with a box to tick on
+	// each row.
+	lvsReport           = 0x0001
+	lvsSingleSel        = 0x0004
+	lvsShowSelAlways    = 0x0008
+	lvsNoSortHeader     = 0x8000
+	lvsExCheckBoxes     = 0x0004
+	lvsExFullRowSelect  = 0x0020
+	lvsExInfoTip        = 0x0400
+	lvsExDoubleBuffer   = 0x10000
+	lvmSetExtendedStyle = 0x1036
+	lvmInsertColumnW    = 0x1061
+	lvmSetColumnWidth   = 0x101E
+	lvmInsertItemW      = 0x104D
+	lvmSetItemTextW     = 0x1074
+	lvmSetItemState     = 0x102B
+	lvmGetItemState     = 0x102C
+	lvisStateImageMask  = 0xF000
+	iccListViewClasses  = 0x0001
+	lbDeleteString      = 0x0182
+	lbSetCurSel         = 0x0186
+	lbGetCurSel         = 0x0188
+	lbSetItemHeight     = 0x01A0
+	lbnSelChange        = 1
+	cbAddString         = 0x0143
+	cbGetCurSel         = 0x0147
+	cbSetCurSel         = 0x014E
+	enChange            = 0x0300
+	enSetFocus          = 0x0100
+	enKillFocus         = 0x0200
+	emSetSel            = 0x00B1
+	emSetCueBanner      = 0x1501
 
 	colorWindow        = 5
 	colorWindowText    = 8
@@ -270,6 +294,8 @@ var ui struct {
 	hwnd                                                                  uintptr
 	list, add, remove, name, token, test, dir, choose, theme, save, apply uintptr
 	labels                                                                [4]uintptr
+	advanced                                                              uintptr // the button that opens the flags
+	adv, advList, advCancel, advDone                                      uintptr // the window of flags while it is open
 	font, mono                                                            uintptr // the system's message font, and a monospaced one for the fields
 	dpi                                                                   uintptr
 	taskbarCreated                                                        uintptr
@@ -324,6 +350,9 @@ func runWindow(s Settings, applied bool, status string) {
 	pLoadIconMetric.Call(inst, 1, 1, uintptr(unsafe.Pointer(&wc.Icon)))   // the app's icon, large
 	pLoadIconMetric.Call(inst, 1, 0, uintptr(unsafe.Pointer(&wc.IconSm))) // and small
 	pRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
+	// The window of flags, Advanced, is a window of its own class.
+	wc.WndProc, wc.ClassName = syscall.NewCallback(advProc), u16(advClass)
+	pRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
 	ui.taskbarCreated, _, _ = pRegisterWindowMessageW.Call(uintptr(unsafe.Pointer(u16("TaskbarCreated"))))
 	pCreateWindowExW.Call(mainExStyle, uintptr(unsafe.Pointer(u16(windowClass))), uintptr(unsafe.Pointer(u16(windowTitle))),
 		mainStyle, 0x80000000, 0x80000000, 0, 0, 0, 0, inst, 0) // CW_USEDEFAULT; WM_CREATE fills it in
@@ -343,6 +372,11 @@ func runWindow(s Settings, applied bool, status string) {
 	for {
 		if r, _, _ := pGetMessageW.Call(uintptr(unsafe.Pointer(&m)), 0, 0, 0); int32(r) <= 0 {
 			return
+		}
+		if ui.adv != 0 {
+			if d, _, _ := pIsDialogMessageW.Call(ui.adv, uintptr(unsafe.Pointer(&m))); d != 0 {
+				continue
+			}
 		}
 		if d, _, _ := pIsDialogMessageW.Call(ui.hwnd, uintptr(unsafe.Pointer(&m))); d != 0 {
 			continue // Tab, Return and the like, handled as in a dialog
@@ -459,6 +493,7 @@ func build() {
 	ui.theme = child("COMBOBOX", "", wsChild|wsVisible|wsTabStop|wsVScroll|cbsDropDownList, 0, idTheme)
 	ui.save = child("BUTTON", "Save", button, 0, idSave)
 	ui.apply = child("BUTTON", "Apply profile", button|bsDefPushButton, 0, idApply)
+	ui.advanced = child("BUTTON", "Advanced…", button, 0, idAdvanced)
 	fonts()
 	for _, p := range ui.profiles {
 		pSendMessageW.Call(ui.list, lbAddString, 0, uintptr(unsafe.Pointer(u16(p.Name))))
@@ -487,7 +522,7 @@ func fonts() {
 	old := []uintptr{ui.font, ui.mono}
 	ui.font, _, _ = pCreateFontIndirectW.Call(uintptr(unsafe.Pointer(&ncm.MessageFont)))
 	ui.mono, _, _ = pCreateFontIndirectW.Call(uintptr(unsafe.Pointer(&mono)))
-	for _, h := range append(ui.labels[:], ui.list, ui.add, ui.remove, ui.test, ui.choose, ui.theme, ui.save, ui.apply) {
+	for _, h := range append(ui.labels[:], ui.list, ui.add, ui.remove, ui.test, ui.choose, ui.theme, ui.save, ui.apply, ui.advanced) {
 		pSendMessageW.Call(h, wmSetFont, ui.font, 1)
 	}
 	for _, h := range []uintptr{ui.name, ui.token, ui.dir} {
@@ -505,6 +540,7 @@ func fonts() {
 // sizes are the window's measurements at its DPI, in its fonts.
 type sizes struct {
 	margin, gap, line, editH, buttonH, tokenH, tokenMinW, labelW, themeH int32
+	advW                                                                 int32
 	testW, chooseW, saveW, applyW                                        int32
 }
 
@@ -527,6 +563,7 @@ func measure() sizes {
 	s.themeH = box.Bottom
 	button := func(t string) int32 { return max(first(extent(ui.font, t))+px(24), px(80)) }
 	s.testW, s.chooseW, s.saveW, s.applyW = button("Test connection"), button("Choose…"), button("Save"), button("Apply profile")
+	s.advW = button("Advanced…")
 	return s
 }
 
@@ -563,6 +600,9 @@ func layout() {
 	y += s.buttonH + s.gap
 	put(ui.labels[3], x, y+(s.themeH-s.line)/2, s.labelW, s.line)
 	put(ui.theme, cx, y, cw, s.themeH)
+	y += s.themeH + s.gap
+	y += s.themeH + s.gap
+	put(ui.advanced, cx+cw-s.advW, y, s.advW, s.buttonH) // as wide as its label, at the right edge
 	by := h - s.margin - s.buttonH
 	put(ui.apply, w-s.margin-s.applyW, by, s.applyW, s.buttonH)
 	put(ui.save, w-s.margin-s.applyW-s.gap-s.saveW, by, s.saveW, s.buttonH)
@@ -573,7 +613,7 @@ func layout() {
 func minWindow() (int32, int32) {
 	s := measure()
 	formW := s.labelW + s.gap + s.tokenMinW
-	formH := s.editH + s.gap + s.tokenH + s.gap + s.buttonH + s.gap + s.buttonH + s.gap + s.themeH
+	formH := s.editH + s.gap + s.tokenH + s.gap + s.buttonH + s.gap + s.buttonH + s.gap + s.themeH + s.gap + s.buttonH
 	r := rect{0, 0, (formW+2*s.gap)*10/7 + 2*s.margin, 2*s.margin + formH + 4*s.gap + s.buttonH}
 	pAdjustWindowRectExForDpi.Call(uintptr(unsafe.Pointer(&r)), mainStyle, 0, mainExStyle, ui.dpi)
 	return r.Right - r.Left, r.Bottom - r.Top
@@ -703,6 +743,9 @@ func command(id, code uintptr) {
 				say(msg, ok)
 			})
 		}()
+	case idAdvanced:
+		keep()
+		openAdvanced()
 	case idChoose:
 		// The dialog opens where the profile's folder is, or would be, or at
 		// its nearest parent that exists.
@@ -955,3 +998,142 @@ func px(v int32) int32 { return int32((uintptr(v)*ui.dpi + 48) / 96) }
 
 // at reads a pointer the system passes as a number.
 func at[T any](p uintptr) *T { return (*T)(*(*unsafe.Pointer)(unsafe.Pointer(&p))) }
+
+type lvColumn struct {
+	Mask, Fmt, Cx    int32
+	Text             *uint16
+	TextMax, SubItem int32
+	Image, Order     int32
+	CxMin, CxDefault int32
+	CxIdeal          int32
+}
+
+type lvItem struct {
+	Mask, Item, SubItem int32
+	State, StateMask    uint32
+	Text                *uint16
+	TextMax, Image      int32
+	Param               uintptr
+	Indent, GroupID     int32
+	Columns             uint32
+	PuColumns, PiColFmt uintptr
+	Group               int32
+}
+
+// advClass is the class of the window of flags.
+const advClass = "CCTokenManagerAdvanced"
+
+// openAdvanced opens the flags of the profile on screen, alphabetically, in a
+// window of their own, and keeps the main window out of reach until it closes.
+// Done keeps the ticks; Cancel, or closing the window, leaves the profile as it
+// was.
+func openAdvanced() {
+	if ui.adv != 0 {
+		pSetForegroundWindow.Call(ui.adv)
+		return
+	}
+	inst, _, _ := pGetModuleHandleW.Call(0)
+	var main rect
+	pGetWindowRect.Call(ui.hwnd, uintptr(unsafe.Pointer(&main)))
+	w, h := px(1020), px(600)
+	title := "Advanced: " + ui.profiles[ui.shown].Name
+	pCreateWindowExW.Call(wsExControlParent, uintptr(unsafe.Pointer(u16(advClass))), uintptr(unsafe.Pointer(u16(title))),
+		wsCaption|wsSysMenu|wsThickFrame|wsClipChildren|wsVisible,
+		uintptr(main.Left+(main.Right-main.Left-w)/2), uintptr(main.Top+(main.Bottom-main.Top-h)/2),
+		uintptr(w), uintptr(h), ui.hwnd, 0, inst, 0)
+	pEnableWindow.Call(ui.hwnd, 0)
+}
+
+// closeAdvanced closes the window of flags, keeping its ticks if done.
+func closeAdvanced(done bool) {
+	if done {
+		p := &ui.profiles[ui.shown]
+		p.Guards = map[string]bool{}
+		for n, g := range guards {
+			st, _, _ := pSendMessageW.Call(ui.advList, lvmGetItemState, uintptr(n), lvisStateImageMask)
+			p.Guards[g.ID()] = st>>12 == 2
+		}
+	}
+	pEnableWindow.Call(ui.hwnd, 1)
+	pDestroyWindow.Call(ui.adv)
+	ui.adv = 0
+	pSetForegroundWindow.Call(ui.hwnd)
+}
+
+func advProc(hwnd, m, wp, lp uintptr) uintptr {
+	switch m {
+	case wmCreate:
+		ui.adv = hwnd
+		ui.advList = flagList(hwnd)
+		inst, _, _ := pGetModuleHandleW.Call(0)
+		button := func(t string, id, style uintptr) uintptr {
+			b, _, _ := pCreateWindowExW.Call(0, uintptr(unsafe.Pointer(u16("BUTTON"))), uintptr(unsafe.Pointer(u16(t))),
+				wsChild|wsVisible|wsTabStop|style, 0, 0, 0, 0, hwnd, id, inst, 0)
+			return b
+		}
+		ui.advCancel = button("Cancel", 2, 0)           // IDCANCEL
+		ui.advDone = button("Done", 1, bsDefPushButton) // IDOK
+		for _, c := range []uintptr{ui.advList, ui.advCancel, ui.advDone} {
+			pSendMessageW.Call(c, wmSetFont, ui.font, 1)
+		}
+		p := ui.profiles[ui.shown]
+		for n, g := range guards {
+			// A box's state is the state image: 1 unticked, 2 ticked.
+			st := lvItem{StateMask: lvisStateImageMask, State: 1 << 12}
+			if g.ticked(p.Guards) {
+				st.State = 2 << 12
+			}
+			pSendMessageW.Call(ui.advList, lvmSetItemState, uintptr(n), uintptr(unsafe.Pointer(&st)))
+		}
+		return 0
+	case wmSize:
+		var rc rect
+		pGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&rc)))
+		s := measure()
+		bw := max(first(extent(ui.font, "Cancel")), first(extent(ui.font, "Done")), px(56)) + px(24)
+		by := rc.Bottom - s.margin - s.buttonH
+		put(ui.advList, s.margin, s.margin, rc.Right-2*s.margin, by-s.gap-s.margin)
+		put(ui.advDone, rc.Right-s.margin-bw, by, bw, s.buttonH)
+		put(ui.advCancel, rc.Right-s.margin-2*bw-s.gap, by, bw, s.buttonH)
+		lw := rc.Right - 2*s.margin
+		pSendMessageW.Call(ui.advList, lvmSetColumnWidth, 0, uintptr(lw*9/20))
+		pSendMessageW.Call(ui.advList, lvmSetColumnWidth, 1, uintptr(max(lw-lw*9/20-px(24), px(80))))
+		return 0
+	case wmCommand:
+		switch wp & 0xFFFF {
+		case 1:
+			closeAdvanced(true)
+		case 2:
+			closeAdvanced(false)
+		}
+		return 0
+	case wmClose:
+		closeAdvanced(false)
+		return 0
+	}
+	r, _, _ := pDefWindowProcW.Call(hwnd, m, wp, lp)
+	return r
+}
+
+// flagList makes the list of flags: a row for each guard with a box to tick,
+// the flag and what it does, and the whole text in a tip where it is cut
+// short.
+func flagList(parent uintptr) uintptr {
+	icc := [2]uint32{8, iccListViewClasses}
+	pInitCommonControlsEx.Call(uintptr(unsafe.Pointer(&icc)))
+	inst, _, _ := pGetModuleHandleW.Call(0)
+	h, _, _ := pCreateWindowExW.Call(wsExClientEdge, uintptr(unsafe.Pointer(u16("SysListView32"))), 0,
+		wsChild|wsVisible|wsTabStop|lvsReport|lvsSingleSel|lvsShowSelAlways|lvsNoSortHeader, 0, 0, 0, 0, parent, idFlags, inst, 0)
+	pSendMessageW.Call(h, lvmSetExtendedStyle, 0, lvsExCheckBoxes|lvsExFullRowSelect|lvsExInfoTip|lvsExDoubleBuffer)
+	for i, t := range []string{"Flag", "Description"} {
+		c := lvColumn{Mask: 0x2 | 0x4 | 0x8, Cx: int32(px(200)), Text: u16(t), SubItem: int32(i)} // LVCF_WIDTH | LVCF_TEXT | LVCF_SUBITEM
+		pSendMessageW.Call(h, lvmInsertColumnW, uintptr(i), uintptr(unsafe.Pointer(&c)))
+	}
+	for n, g := range guards {
+		it := lvItem{Mask: 0x1, Item: int32(n), Text: u16(g.Key)} // LVIF_TEXT
+		pSendMessageW.Call(h, lvmInsertItemW, 0, uintptr(unsafe.Pointer(&it)))
+		sub := lvItem{SubItem: 1, Text: u16(g.Desc)}
+		pSendMessageW.Call(h, lvmSetItemTextW, uintptr(n), uintptr(unsafe.Pointer(&sub)))
+	}
+	return h
+}

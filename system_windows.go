@@ -1,8 +1,9 @@
 package main
 
-// What differs on Windows: ~/.claude becomes a junction, which needs no admin
-// rights, and as a file cannot be one, the profile's .claude.json moves into
-// ~/.claude.json's place while the profile is applied.
+// What differs on Windows: ~/.claude and the CLI's cache folder become
+// junctions, which need no admin rights, and as a file cannot be one, the
+// profile's .claude.json moves into ~/.claude.json's place while the profile is
+// applied.
 
 import (
 	"context"
@@ -69,29 +70,49 @@ func cliInstalled() bool {
 	return true
 }
 
-// standIn makes ~/.claude a junction to the profile's folder and moves the
-// .claude.json from that folder into ~/.claude.json's place.
+// cacheDir is the CLI's cache folder, which holds the logs of MCP servers. The
+// CLI keeps it where %LOCALAPPDATA% points, or in AppData\Local without it.
+var cacheDir = func() string {
+	local := os.Getenv("LOCALAPPDATA")
+	if local == "" {
+		local = filepath.Join(home, "AppData", "Local")
+	}
+	return filepath.Join(local, "claude-cli-nodejs")
+}()
+
+// standIn makes ~/.claude a junction to the profile's folder and the CLI's
+// cache folder one to a folder in it, and moves the .claude.json from that
+// folder into ~/.claude.json's place.
 func standIn(dir string) error {
 	swapOut()
 	state := filepath.Join(dir, ".claude.json")
 	if err := markOnboarded(state); err != nil {
 		return err
 	}
+	cache := filepath.Join(dir, "claude-cli-nodejs")
+	if err := os.MkdirAll(cache, 0o700); err != nil {
+		return err
+	}
 	if err := junction(claudeDir, dir); err != nil {
 		return err
 	}
 	linked = dir
+	if err := junction(cacheDir, cache); err != nil {
+		return err
+	}
 	return swapIn(state)
 }
 
 // standDown undoes standIn: the profile's .claude.json goes back to its folder,
-// the junction goes, and what was moved aside comes back.
+// the junctions go, and what was moved aside comes back.
 func standDown() {
 	swapOut()
-	if ourLink(claudeDir) {
-		os.Remove(claudeDir)
+	for _, path := range []string{claudeDir, cacheDir} {
+		if ourLink(path) {
+			os.Remove(path)
+		}
 	}
-	for _, path := range []string{claudeDir, claudeJSON} {
+	for _, path := range []string{claudeDir, claudeJSON, cacheDir} {
 		if _, err := os.Lstat(path); os.IsNotExist(err) {
 			os.Rename(path+".default", path)
 		}

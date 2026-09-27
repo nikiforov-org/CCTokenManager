@@ -9,8 +9,8 @@ package main
 void cp_run_settings(const char *profilesJSON, const char *activeID,
                      const char *appliedID, const char *profilesDir,
                      const char *themesJSON, const char *defaultTheme,
-                     const char *initialStatus, const void *iconData, int iconLen,
-                     int asked);
+                     const char *guardsJSON, const char *initialStatus,
+                     const void *iconData, int iconLen, int asked);
 */
 import "C"
 
@@ -35,6 +35,18 @@ func init() { runtime.LockOSThread() }
 func runWindow(s Settings, applied bool, status string) {
 	list, _ := json.Marshal(s.Profiles)
 	choices, _ := json.Marshal(themes)
+	// The window gets each guard's ID, the flag, what it does, and its default.
+	type row struct {
+		ID   string `json:"id"`
+		Flag string `json:"flag"`
+		Desc string `json:"desc"`
+		On   bool   `json:"on"`
+	}
+	var rows []row
+	for _, g := range guards {
+		rows = append(rows, row{g.ID(), g.Key, g.Desc, g.Ticked})
+	}
+	blocks, _ := json.Marshal(rows)
 	active, tick := s.Active().ID, ""
 	if applied {
 		tick = active
@@ -45,7 +57,7 @@ func runWindow(s Settings, applied bool, status string) {
 	}
 	C.cp_run_settings(C.CString(string(list)), C.CString(active), C.CString(tick),
 		C.CString(profilesDir), C.CString(string(choices)), C.CString(defaultTheme),
-		C.CString(status), unsafe.Pointer(&menuBarIcon[0]), C.int(len(menuBarIcon)), asked)
+		C.CString(string(blocks)), C.CString(status), unsafe.Pointer(&menuBarIcon[0]), C.int(len(menuBarIcon)), asked)
 }
 
 // fromWindow reads the profiles the window sends as JSON.

@@ -1,8 +1,10 @@
 package main
 
-// Applying a profile: ~/.claude and ~/.claude.json stand for its folder and the
-// state file in it, the theme goes into its settings.json and the token where
-// the CLI keeps its login. What stood there waits as .default; a quit undoes it.
+// Applying a profile: ~/.claude, ~/.claude.json and the CLI's cache folder stand
+// for its folder, the state file and a cache folder in it, the theme, the place
+// for the CLI's temporary files and the guards go into its settings.json and the
+// token where the CLI keeps its login. What stood there waits as .default; a
+// quit undoes it.
 
 import (
 	"encoding/json"
@@ -14,6 +16,9 @@ import (
 	"strings"
 	"sync"
 )
+
+// tmpEnv is the CLI's setting for where its temporary files go.
+const tmpEnv = "CLAUDE_CODE_TMPDIR"
 
 var (
 	claudeDir  = filepath.Join(home, ".claude")
@@ -45,12 +50,22 @@ func apply(s Settings) (string, bool) {
 	case p.Token == "":
 		err = errors.New("this profile has no OAuth token")
 	case !filepath.IsAbs(dir) || within(profilesDir, dir) || within(dir, claudeDir) ||
-		within(dir, claudeDir+".default") || within(claudeDir, dir):
-		// ~/.claude would stand for itself or for a folder holding it, and
-		// ~/.CCTokenManager holds the profiles.
+		within(dir, claudeDir+".default") || within(claudeDir, dir) ||
+		within(dir, cacheDir) || within(dir, cacheDir+".default"):
+		// ~/.claude or the cache folder would stand for itself or for a folder
+		// holding it, and ~/.CCTokenManager holds the profiles.
 		err = fmt.Errorf("%s cannot be its folder", tilde(dir))
 	default:
 		takeBack(dir)
+		// The CLI's temporary files go into the profile's folder too; the CLI
+		// takes only a folder no one else can open.
+		tmp := filepath.Join(dir, "tmp")
+		if err = os.MkdirAll(tmp, 0o700); err == nil {
+			err = os.Chmod(tmp, 0o700)
+		}
+		if err != nil {
+			break
+		}
 		err = edit(filepath.Join(dir, "settings.json"), func(m map[string]any) bool {
 			env, _ := m["env"].(map[string]any)
 			if env == nil {
@@ -59,6 +74,10 @@ func apply(s Settings) (string, bool) {
 			// The token goes where the CLI keeps its login (see giveToken), and
 			// loginEnv has the CLI look there.
 			maps.Copy(env, loginEnv)
+			env[tmpEnv] = tmp
+			// The guards as they stand now, not on top of an earlier set.
+			takeGuards(m, env)
+			putGuards(m, env, p.Guards)
 			m["env"] = env
 			if len(env) == 0 {
 				delete(m, "env")
@@ -124,10 +143,12 @@ func takeBack(keep string) {
 			for k := range loginEnv {
 				delete(env, k)
 			}
+			delete(env, tmpEnv)
+			guarded := takeGuards(m, env)
 			if env != nil && len(env) == 0 {
 				delete(m, "env")
 			}
-			return themed || len(env) < n
+			return themed || guarded || len(env) < n
 		})
 	}
 }

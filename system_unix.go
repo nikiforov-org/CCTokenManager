@@ -2,8 +2,9 @@
 
 package main
 
-// What differs on macOS and Linux: ~/.claude and ~/.claude.json become
-// symbolic links, and claude is looked for the way a terminal finds it.
+// What differs on macOS and Linux: ~/.claude, ~/.claude.json and the CLI's
+// cache folder become symbolic links, and claude is looked for the way a
+// terminal finds it.
 
 import (
 	"context"
@@ -50,24 +51,45 @@ func watchSignals() {
 // cliInstalled is always true here: the app starts either way.
 func cliInstalled() bool { return true }
 
-// standIn makes ~/.claude a link to the profile's folder and ~/.claude.json a
+// cacheDir is the CLI's cache folder, which holds the logs of MCP servers.
+var cacheDir = func() string {
+	if runtime.GOOS == "darwin" {
+		return filepath.Join(home, "Library", "Caches", "claude-cli-nodejs")
+	}
+	if d := os.Getenv("XDG_CACHE_HOME"); filepath.IsAbs(d) {
+		return filepath.Join(d, "claude-cli-nodejs")
+	}
+	return filepath.Join(home, ".cache", "claude-cli-nodejs")
+}()
+
+// standIn makes ~/.claude a link to the profile's folder, ~/.claude.json a
 // link to the .claude.json in it, which is where the CLI keeps that file for a
-// folder of its own.
+// folder of its own, and the CLI's cache folder a link to one in it.
 func standIn(dir string) error {
 	state := filepath.Join(dir, ".claude.json")
 	if err := markOnboarded(state); err != nil {
+		return err
+	}
+	cache := filepath.Join(dir, "claude-cli-nodejs")
+	if err := os.MkdirAll(cache, 0o700); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(cacheDir), 0o700); err != nil {
 		return err
 	}
 	if err := link(claudeDir, dir); err != nil {
 		return err
 	}
 	linked = dir
-	return link(claudeJSON, state)
+	if err := link(claudeJSON, state); err != nil {
+		return err
+	}
+	return link(cacheDir, cache)
 }
 
 // standDown undoes standIn: the links go, and what was moved aside comes back.
 func standDown() {
-	for _, path := range []string{claudeDir, claudeJSON} {
+	for _, path := range []string{claudeDir, claudeJSON, cacheDir} {
 		if ourLink(path) {
 			os.Remove(path)
 		}

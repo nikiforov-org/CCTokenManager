@@ -39,6 +39,15 @@ func tidy(profiles []Profile) []Profile {
 		p := &profiles[i]
 		p.Name, p.Dir = strings.TrimSpace(p.Name), strings.TrimSpace(p.Dir)
 		p.Token = strings.Join(strings.Fields(p.Token), "")
+		// A guard as it is by default is not the profile's choice.
+		for _, g := range guards {
+			if v, ok := p.Guards[g.ID()]; ok && v == g.Ticked {
+				delete(p.Guards, g.ID())
+			}
+		}
+		if len(p.Guards) == 0 {
+			p.Guards = nil
+		}
 	}
 	return profiles
 }

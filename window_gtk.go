@@ -6,8 +6,8 @@ package main
 #cgo pkg-config: gtk+-3.0
 #include <stdlib.h>
 void cp_run_settings(const char *profiles, const char *activeID, const char *appliedID,
-                     const char *themes, const char *defaultTheme, const char *initialStatus,
-                     const void *iconData, int iconLen, int asked);
+                     const char *themes, const char *defaultTheme, const char *guards,
+                     const char *initialStatus, const void *iconData, int iconLen, int asked);
 */
 import "C"
 
@@ -27,13 +27,24 @@ var appIcon []byte
 func init() { runtime.LockOSThread() }
 
 // Profiles cross to the window as records split by RS, their fields by US:
-// id, name, token, dir, theme. Neither character can be typed into a field.
+// id, name, token, dir, theme, and every guard as id=1 or id=0, split by
+// commas. Neither separator can be typed into a field, and no guard's id holds
+// a comma or an equals sign.
 const rs, us = "\x1e", "\x1f"
 
 func encode(profiles []Profile) string {
 	var recs []string
 	for _, p := range profiles {
-		recs = append(recs, strings.Join([]string{p.ID, p.Name, p.Token, p.Dir, p.Theme}, us))
+		var states []string
+		for _, g := range guards {
+			v := "0"
+			if g.ticked(p.Guards) {
+				v = "1"
+			}
+			states = append(states, g.ID()+"="+v)
+		}
+		recs = append(recs, strings.Join([]string{p.ID, p.Name, p.Token, p.Dir, p.Theme,
+			strings.Join(states, ",")}, us))
 	}
 	return strings.Join(recs, rs)
 }
@@ -41,8 +52,15 @@ func encode(profiles []Profile) string {
 func decode(s *C.char) []Profile {
 	var profiles []Profile
 	for _, rec := range strings.Split(C.GoString(s), rs) {
-		if f := strings.Split(rec, us); len(f) == 5 {
-			profiles = append(profiles, Profile{ID: f[0], Name: f[1], Token: f[2], Dir: f[3], Theme: f[4]})
+		if f := strings.Split(rec, us); len(f) == 6 {
+			p := Profile{ID: f[0], Name: f[1], Token: f[2], Dir: f[3], Theme: f[4]}
+			p.Guards = map[string]bool{}
+			for _, st := range strings.Split(f[5], ",") {
+				if id, v, ok := strings.Cut(st, "="); ok {
+					p.Guards[id] = v == "1"
+				}
+			}
+			profiles = append(profiles, p)
 		}
 	}
 	return profiles
@@ -52,9 +70,16 @@ func decode(s *C.char) []Profile {
 // it if applied is true, and says status first if there is anything to say. It
 // never returns: the app exits from inside it.
 func runWindow(s Settings, applied bool, status string) {
-	var choices []string
+	var choices, blocks []string
 	for _, t := range themes {
 		choices = append(choices, t.Value+us+t.Name)
+	}
+	for _, g := range guards {
+		on := "0"
+		if g.Ticked {
+			on = "1"
+		}
+		blocks = append(blocks, g.ID()+us+g.Key+us+g.Desc+us+on)
 	}
 	active, tick := s.Active().ID, ""
 	if applied {
@@ -65,7 +90,8 @@ func runWindow(s Settings, applied bool, status string) {
 		asked = 1
 	}
 	C.cp_run_settings(C.CString(encode(s.Profiles)), C.CString(active), C.CString(tick),
-		C.CString(strings.Join(choices, rs)), C.CString(defaultTheme), C.CString(status),
+		C.CString(strings.Join(choices, rs)), C.CString(defaultTheme),
+		C.CString(strings.Join(blocks, rs)), C.CString(status),
 		unsafe.Pointer(&appIcon[0]), C.int(len(appIcon)), asked)
 }
 

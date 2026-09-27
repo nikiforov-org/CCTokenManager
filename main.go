@@ -13,13 +13,17 @@ import (
 )
 
 // A Profile is one subscription: its OAuth token, the folder Claude Code keeps
-// its config in while the profile is applied, and the theme it shows meanwhile.
+// its config in while the profile is applied, the theme it shows meanwhile, and
+// the guards it turns the other way.
 type Profile struct {
 	ID    string `json:"id"`
 	Name  string `json:"name"`
 	Token string `json:"token,omitempty"` // kept in the system's store, never in the config file
 	Dir   string `json:"dir,omitempty"`   // chosen in the window; empty means the default
 	Theme string `json:"theme"`           // one of themes
+	// Guards holds the guards the profile turns the other way from their
+	// default; every other guard stays as it is by default.
+	Guards map[string]bool `json:"guards,omitempty"`
 }
 
 type Settings struct {

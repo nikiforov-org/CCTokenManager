@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."
 
 export BIN="CCTokenManager"
 # Version is set by hand, never bumped automatically.
-export VERSION="${VERSION:-0.0.1}"
+export VERSION="${VERSION:-1.0.0}"
 export DIST="dist"
 mkdir -p "$DIST"
 

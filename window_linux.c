@@ -16,6 +16,7 @@ typedef struct {
     char *id;
     GtkWidget *row, *tick, *label;
     GtkWidget *page, *name, *token, *dir, *theme, *test, *apply;
+    GtkListStore *guards;  // a row for each guard: on, flag, what it does
     char *secret;     // the token the field stands for while it shows shading
     gboolean shown;   // whether the field shows the token rather than shading
 } CPProfile;
@@ -24,6 +25,8 @@ static GPtrArray *cp_profiles;
 static GtkWidget *cp_window, *cp_list, *cp_stack, *cp_remove;
 static char *cp_applied;
 static char **cp_theme_values, **cp_theme_names, *cp_default_theme;
+static char **cp_guard_ids, **cp_guard_flags, **cp_guard_descs;  // the flags a profile can set
+static gboolean *cp_guard_on;                                     // each one's default
 static GdkPixbuf *cp_icon;
 static gboolean cp_tray;   // whether a tray shows the app's icon
 static gboolean cp_quitting;
@@ -159,9 +162,17 @@ static char *cp_encode(void) {
         CPProfile *p = g_ptr_array_index(cp_profiles, i);
         char *tok = cp_token(p);
         const char *theme = gtk_combo_box_get_active_id(GTK_COMBO_BOX(p->theme));
-        g_string_append_printf(s, "%s%s" US "%s" US "%s" US "%s" US "%s", i ? RS : "", p->id,
+        g_string_append_printf(s, "%s%s" US "%s" US "%s" US "%s" US "%s" US, i ? RS : "", p->id,
             gtk_entry_get_text(GTK_ENTRY(p->name)), tok,
             gtk_entry_get_text(GTK_ENTRY(p->dir)), theme ? theme : cp_default_theme);
+        GtkTreeIter it;
+        gboolean more = gtk_tree_model_get_iter_first(GTK_TREE_MODEL(p->guards), &it);
+        for (int k = 0; more && cp_guard_ids[k]; k++) {
+            gboolean on;
+            gtk_tree_model_get(GTK_TREE_MODEL(p->guards), &it, 0, &on, -1);
+            g_string_append_printf(s, "%s%s=%d", k ? "," : "", cp_guard_ids[k], on ? 1 : 0);
+            more = gtk_tree_model_iter_next(GTK_TREE_MODEL(p->guards), &it);
+        }
         g_free(tok);
     }
     return g_string_free(s, FALSE);
@@ -320,10 +331,88 @@ static GtkWidget *cp_token_box(CPProfile *p) {
     return sw;
 }
 
+// A tick in the list of flags turns its flag the other way.
+static void cp_guard_toggled(GtkCellRendererToggle *r, char *path, gpointer data) {
+    CPProfile *p = data;
+    GtkTreeIter it;
+    gboolean on;
+    if (!gtk_tree_model_get_iter_from_string(GTK_TREE_MODEL(p->guards), &it, path)) return;
+    gtk_tree_model_get(GTK_TREE_MODEL(p->guards), &it, 0, &on, -1);
+    gtk_list_store_set(p->guards, &it, 0, !on, -1);
+}
+
+// cp_edit_flags opens the profile's flags, Advanced, in a window of their own. Done keeps
+// the ticks as they are; Cancel, or closing the window, puts them back as they
+// were when it opened.
+static void cp_edit_flags(GtkButton *b, gpointer data) {
+    CPProfile *p = data;
+    GArray *was = g_array_new(FALSE, FALSE, sizeof(gboolean));
+    GtkTreeIter it;
+    gboolean more = gtk_tree_model_get_iter_first(GTK_TREE_MODEL(p->guards), &it);
+    while (more) {
+        gboolean v;
+        gtk_tree_model_get(GTK_TREE_MODEL(p->guards), &it, 0, &v, -1);
+        g_array_append_val(was, v);
+        more = gtk_tree_model_iter_next(GTK_TREE_MODEL(p->guards), &it);
+    }
+
+    char *title = g_strdup_printf("Advanced: %s", gtk_entry_get_text(GTK_ENTRY(p->name)));
+    GtkWidget *d = gtk_dialog_new_with_buttons(title, GTK_WINDOW(cp_window),
+        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        "Cancel", GTK_RESPONSE_CANCEL, "Done", GTK_RESPONSE_ACCEPT, NULL);
+    g_free(title);
+    gtk_dialog_set_default_response(GTK_DIALOG(d), GTK_RESPONSE_ACCEPT);
+    gtk_window_set_default_size(GTK_WINDOW(d), 1020, 620);
+    GtkWidget *guardList = gtk_tree_view_new_with_model(GTK_TREE_MODEL(p->guards));
+    gtk_tree_view_set_tooltip_column(GTK_TREE_VIEW(guardList), 2);
+    GtkCellRenderer *tick = gtk_cell_renderer_toggle_new();
+    g_signal_connect(tick, "toggled", G_CALLBACK(cp_guard_toggled), p);
+    gtk_tree_view_append_column(GTK_TREE_VIEW(guardList),
+        gtk_tree_view_column_new_with_attributes("", tick, "active", 0, NULL));
+    // The flag gets a fixed share of the width, cut short with an ellipsis, so
+    // that a long one leaves room for what it does; either can be widened.
+    GtkCellRenderer *mono = gtk_cell_renderer_text_new();
+    g_object_set(mono, "family", "monospace", "ellipsize", PANGO_ELLIPSIZE_END, NULL);
+    GtkTreeViewColumn *flagCol = gtk_tree_view_column_new_with_attributes("Flag", mono, "text", 1, NULL);
+    gtk_tree_view_column_set_sizing(flagCol, GTK_TREE_VIEW_COLUMN_FIXED);
+    gtk_tree_view_column_set_fixed_width(flagCol, 400);
+    gtk_tree_view_column_set_resizable(flagCol, TRUE);
+    gtk_tree_view_append_column(GTK_TREE_VIEW(guardList), flagCol);
+    GtkCellRenderer *plain = gtk_cell_renderer_text_new();
+    g_object_set(plain, "ellipsize", PANGO_ELLIPSIZE_END, NULL);
+    GtkTreeViewColumn *descCol = gtk_tree_view_column_new_with_attributes("Description", plain, "text", 2, NULL);
+    gtk_tree_view_column_set_expand(descCol, TRUE);
+    gtk_tree_view_column_set_resizable(descCol, TRUE);
+    gtk_tree_view_append_column(GTK_TREE_VIEW(guardList), descCol);
+    GtkWidget *guardBox = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(guardBox), GTK_SHADOW_IN);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(guardBox), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+    
+    
+    gtk_widget_set_hexpand(guardBox, TRUE);
+    gtk_widget_set_vexpand(guardBox, TRUE);
+    gtk_widget_set_margin_bottom(guardBox, 12);
+    gtk_container_add(GTK_CONTAINER(guardBox), guardList);
+    GtkWidget *area = gtk_dialog_get_content_area(GTK_DIALOG(d));
+    gtk_container_set_border_width(GTK_CONTAINER(area), 12);
+    gtk_box_pack_start(GTK_BOX(area), guardBox, TRUE, TRUE, 0);
+    gtk_widget_show_all(d);
+
+    if (gtk_dialog_run(GTK_DIALOG(d)) != GTK_RESPONSE_ACCEPT) {
+        more = gtk_tree_model_get_iter_first(GTK_TREE_MODEL(p->guards), &it);
+        for (guint i = 0; more && i < was->len; i++) {
+            gtk_list_store_set(p->guards, &it, 0, g_array_index(was, gboolean, i), -1);
+            more = gtk_tree_model_iter_next(GTK_TREE_MODEL(p->guards), &it);
+        }
+    }
+    g_array_free(was, TRUE);
+    gtk_widget_destroy(d);
+}
+
 // cp_build lays out one profile's row and form. Every profile gets its own set,
 // so no value is ever shared between two of them.
 static CPProfile *cp_build(const char *id, const char *name, const char *token,
-                           const char *dir, const char *theme) {
+                           const char *dir, const char *theme, const char *states) {
     CPProfile *p = g_new0(CPProfile, 1);
     p->id = g_strdup(id);
     p->secret = g_strdup(token);
@@ -370,6 +459,25 @@ static CPProfile *cp_build(const char *id, const char *name, const char *token,
         gtk_combo_box_set_active_id(GTK_COMBO_BOX(p->theme), cp_default_theme);
     g_signal_connect(p->name, "changed", G_CALLBACK(cp_name_changed), p);
 
+    // The flags the profile sets: a list with a box to tick on each row, each
+    // flag as the profile has it, or else as by default.
+    char **given = g_strsplit(states, ",", -1);
+    p->guards = gtk_list_store_new(3, G_TYPE_BOOLEAN, G_TYPE_STRING, G_TYPE_STRING);
+    for (int k = 0; cp_guard_ids[k]; k++) {
+        gboolean on = cp_guard_on[k];
+        char *prefix = g_strconcat(cp_guard_ids[k], "=", NULL);
+        for (int j = 0; given[j]; j++)
+            if (g_str_has_prefix(given[j], prefix)) on = strcmp(given[j] + strlen(prefix), "1") == 0;
+        g_free(prefix);
+        gtk_list_store_insert_with_values(p->guards, NULL, -1, 0, on, 1, cp_guard_flags[k],
+                                          2, cp_guard_descs[k], -1);
+    }
+    g_strfreev(given);
+    // The flags are listed in a window of their own, which this opens.
+    GtkWidget *advanced = gtk_button_new_with_label("Advanced…");
+    gtk_widget_set_halign(advanced, GTK_ALIGN_END);  // as wide as its label, at the right edge
+    g_signal_connect(advanced, "clicked", G_CALLBACK(cp_edit_flags), p);
+
     GtkWidget *g = gtk_grid_new();
     gtk_grid_set_row_spacing(GTK_GRID(g), 8);
     gtk_grid_set_column_spacing(GTK_GRID(g), 8);
@@ -385,6 +493,7 @@ static CPProfile *cp_build(const char *id, const char *name, const char *token,
     gtk_grid_attach(GTK_GRID(g), dirRow, 1, 3, 1, 1);
     gtk_grid_attach(GTK_GRID(g), cp_label("Profile theme"), 0, 4, 1, 1);
     gtk_grid_attach(GTK_GRID(g), p->theme, 1, 4, 1, 1);
+    gtk_grid_attach(GTK_GRID(g), advanced, 1, 5, 1, 1);
 
     // Acting on the whole profile rather than on one field, these two stand
     // apart from the form's rows, in its bottom corner.
@@ -415,7 +524,7 @@ static CPProfile *cp_build(const char *id, const char *name, const char *token,
 static void cp_add(GtkButton *b, gpointer data) {
     char *uuid = g_uuid_string_random();
     char *id = g_ascii_strup(uuid, -1);
-    CPProfile *p = cp_build(id, "New profile", "", "", cp_default_theme);
+    CPProfile *p = cp_build(id, "New profile", "", "", cp_default_theme, "");  // every guard as by default
     g_free(uuid);
     g_free(id);
     cp_select(cp_profiles->len - 1);
@@ -448,6 +557,7 @@ static void cp_delete(GtkButton *b, gpointer data) {
     gtk_widget_destroy(p->page);
     g_free(p->id);
     g_free(p->secret);
+    g_object_unref(p->guards);
     g_free(p);
     cp_select(MIN(i, cp_profiles->len - 1));
     cp_refresh();
@@ -738,8 +848,8 @@ static void cp_register_login(void) {
 }
 
 void cp_run_settings(const char *profiles, const char *activeID, const char *appliedID,
-                     const char *themes, const char *defaultTheme, const char *initialStatus,
-                     const void *iconData, int iconLen, int asked) {
+                     const char *themes, const char *defaultTheme, const char *guards,
+                     const char *initialStatus, const void *iconData, int iconLen, int asked) {
     gtk_init(NULL, NULL);
     g_set_prgname("CCTokenManager");
     g_set_application_name("CC Token Manager");
@@ -767,6 +877,22 @@ void cp_run_settings(const char *profiles, const char *activeID, const char *app
     }
     g_strfreev(recs);
     cp_default_theme = g_strdup(defaultTheme);
+    recs = g_strsplit(guards, RS, -1);
+    n = g_strv_length(recs);
+    cp_guard_ids = g_new0(char *, n + 1);
+    cp_guard_flags = g_new0(char *, n + 1);
+    cp_guard_descs = g_new0(char *, n + 1);
+    cp_guard_on = g_new0(gboolean, n + 1);
+    for (guint i = 0; i < n; i++) {
+        char **f = g_strsplit(recs[i], US, 4);
+        guint nf = g_strv_length(f);
+        cp_guard_ids[i] = g_strdup(f[0]);
+        cp_guard_flags[i] = g_strdup(nf > 1 ? f[1] : f[0]);
+        cp_guard_descs[i] = g_strdup(nf > 2 ? f[2] : "");
+        cp_guard_on[i] = nf > 3 && strcmp(f[3], "1") == 0;
+        g_strfreev(f);
+    }
+    g_strfreev(recs);
     cp_applied = g_strdup(appliedID);
     cp_profiles = g_ptr_array_new();
 
@@ -813,9 +939,9 @@ void cp_run_settings(const char *profiles, const char *activeID, const char *app
     guint want = 0;
     char **ps = g_strsplit(profiles, RS, -1);
     for (guint i = 0; ps[i]; i++) {
-        char **f = g_strsplit(ps[i], US, 5);
-        if (g_strv_length(f) == 5) {
-            cp_build(f[0], f[1], f[2], f[3], f[4]);
+        char **f = g_strsplit(ps[i], US, 6);
+        if (g_strv_length(f) == 6) {
+            cp_build(f[0], f[1], f[2], f[3], f[4], f[5]);
             if (strcmp(f[0], activeID) == 0) want = cp_profiles->len - 1;
         }
         g_strfreev(f);
