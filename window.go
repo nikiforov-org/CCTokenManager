@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 )
@@ -63,6 +64,45 @@ func saveProfiles(profiles []Profile, appliedID string) (string, bool) {
 	}
 	config = s
 	return "Saved.", true
+}
+
+// goingFolder is the folder, as saved, that goes with profile id when the
+// window deletes it, or "" if none goes: a folder that cannot be a profile's
+// stays, as do a whole disk and a folder another profile uses.
+func goingFolder(id string) string {
+	for _, p := range config.Profiles {
+		if p.ID != id {
+			continue
+		}
+		dir := p.Folder()
+		if unfit(dir) || diskRoot(dir) || slices.ContainsFunc(config.Profiles, func(q Profile) bool {
+			f := q.Folder()
+			return q.ID != id && !unfit(f) && (within(f, dir) || within(dir, f))
+		}) {
+			return ""
+		}
+		return dir
+	}
+	return ""
+}
+
+// deleteNote is what the window says goes with a profile it is about to delete.
+func deleteNote(id string) string {
+	if dir := goingFolder(id); dir != "" {
+		return "Its token is removed from this app, and its folder is deleted with everything in it:\n" + tilde(dir)
+	}
+	return "Its token is removed from this app."
+}
+
+// deleteFolder deletes the folder of a profile the window has just deleted,
+// and says why not if it could not.
+func deleteFolder(id string) string {
+	if dir := goingFolder(id); dir != "" {
+		if err := removeFolder(dir); err != nil {
+			return tilde(dir) + " could not be deleted: " + err.Error() + "."
+		}
+	}
+	return ""
 }
 
 // applyProfile switches Claude Code to the profile as it stands on screen and

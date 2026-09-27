@@ -696,8 +696,11 @@ func command(id, code uintptr) {
 		pSendMessageW.Call(ui.name, emSetSel, 0, ^uintptr(0))
 	case idRemove:
 		i := ui.shown
-		if !ask(fmt.Sprintf("Delete profile “%s”?", text(ui.name)), "Its token is removed from this app.") {
+		if !ask(fmt.Sprintf("Delete profile “%s”?", text(ui.name)), deleteNote(ui.profiles[i].ID)) {
 			return
+		}
+		if msg := deleteFolder(ui.profiles[i].ID); msg != "" {
+			say(msg, false)
 		}
 		// The tick cannot stay on a profile that is gone, nor move to one that
 		// is not applied.

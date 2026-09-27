@@ -126,6 +126,17 @@ func cpDefaultDir(name, id *C.char) *C.char {
 	return C.CString(tilde(Profile{ID: C.GoString(id), Name: C.GoString(name)}.Folder()))
 }
 
+// cpDeleteNote is what goes with a profile the window is about to delete.
+//
+//export cpDeleteNote
+func cpDeleteNote(id *C.char) *C.char { return C.CString(deleteNote(C.GoString(id))) }
+
+// cpDeleteFolder deletes the folder of a profile the window has just deleted:
+// "" if it went, or why not.
+//
+//export cpDeleteFolder
+func cpDeleteFolder(id *C.char) *C.char { return C.CString(deleteFolder(C.GoString(id))) }
+
 // cpSetLaunchAtLogin records that the window has registered the app to open at
 // login, so that it never does again.
 //

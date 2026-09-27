@@ -49,11 +49,7 @@ func apply(s Settings) (string, bool) {
 	switch {
 	case p.Token == "":
 		err = errors.New("this profile has no OAuth token")
-	case !filepath.IsAbs(dir) || within(profilesDir, dir) || within(dir, claudeDir) ||
-		within(dir, claudeDir+".default") || within(claudeDir, dir) ||
-		within(dir, cacheDir) || within(dir, cacheDir+".default"):
-		// ~/.claude or the cache folder would stand for itself or for a folder
-		// holding it, and ~/.CCTokenManager holds the profiles.
+	case unfit(dir):
 		err = fmt.Errorf("%s cannot be its folder", tilde(dir))
 	default:
 		takeBack(dir)
@@ -114,6 +110,27 @@ func revert() {
 func quit() {
 	mu.Lock()
 	revert()
+}
+
+// unfit reports whether dir cannot be a profile's folder: ~/.claude or the
+// cache folder would stand for itself or for a folder holding it, and
+// ~/.CCTokenManager holds the profiles.
+func unfit(dir string) bool {
+	return !filepath.IsAbs(dir) || within(profilesDir, dir) || within(dir, claudeDir) ||
+		within(dir, claudeDir+".default") || within(claudeDir, dir) ||
+		within(dir, cacheDir) || within(dir, cacheDir+".default")
+}
+
+// removeFolder deletes the folder of a profile that is gone. If ~/.claude
+// stands for it, the profile is taken back first, as a quit does, so that
+// nothing is left pointing into a folder that is not there.
+func removeFolder(dir string) error {
+	mu.Lock()
+	defer mu.Unlock()
+	if linked != "" && within(linked, dir) {
+		revert()
+	}
+	return os.RemoveAll(dir)
 }
 
 // markOnboarded writes into a state file what the CLI writes once its

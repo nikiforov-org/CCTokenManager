@@ -117,6 +117,18 @@ func link(path, target string) error {
 	return os.Rename(tmp, path)
 }
 
+// diskRoot reports whether dir is the top of a disk: the root, or where one is
+// mounted, such as a drive in /Volumes or /media.
+func diskRoot(dir string) bool {
+	fi, err := os.Stat(dir)
+	up, err2 := os.Stat(filepath.Dir(dir))
+	if err != nil || err2 != nil {
+		return false
+	}
+	return filepath.Dir(dir) == dir ||
+		fi.Sys().(*syscall.Stat_t).Dev != up.Sys().(*syscall.Stat_t).Dev
+}
+
 // loginShell is the user's shell: $SHELL, or, for an app started without it,
 // the one the system keeps for the user (/etc/passwd, or dscl on macOS).
 func loginShell() string {

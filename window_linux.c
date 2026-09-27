@@ -538,11 +538,16 @@ static void cp_delete(GtkButton *b, gpointer data) {
     GtkWidget *d = gtk_message_dialog_new(GTK_WINDOW(cp_window), GTK_DIALOG_MODAL,
         GTK_MESSAGE_QUESTION, GTK_BUTTONS_NONE, "Delete profile “%s”?",
         gtk_entry_get_text(GTK_ENTRY(p->name)));
-    gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(d), "Its token is removed from this app.");
+    char *note = cpDeleteNote(p->id);
+    gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(d), "%s", note);
+    free(note);
     gtk_dialog_add_buttons(GTK_DIALOG(d), "Cancel", GTK_RESPONSE_CANCEL, "Delete", GTK_RESPONSE_ACCEPT, NULL);
     gint answer = gtk_dialog_run(GTK_DIALOG(d));
     gtk_widget_destroy(d);
     if (answer != GTK_RESPONSE_ACCEPT) return;
+    char *failed = cpDeleteFolder(p->id);
+    if (*failed) cp_alert(failed, FALSE);
+    free(failed);
 
     guint i = 0;
     while (g_ptr_array_index(cp_profiles, i) != p) i++;

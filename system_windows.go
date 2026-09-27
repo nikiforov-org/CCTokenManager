@@ -163,6 +163,9 @@ func junction(path, target string) error {
 	return err
 }
 
+// diskRoot reports whether dir is the top of a disk, such as D:\.
+func diskRoot(dir string) bool { return filepath.Dir(dir) == dir }
+
 // swapIn moves the profile's state file into ~/.claude.json's place, after
 // moving aside what stood there. The note is written first: whatever happens
 // after it, swapOut knows where the file belongs.
