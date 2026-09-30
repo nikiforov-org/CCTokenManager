@@ -121,14 +121,19 @@ func unfit(dir string) bool {
 		within(dir, cacheDir) || within(dir, cacheDir+".default")
 }
 
-// removeFolder deletes the folder of a profile that is gone. If ~/.claude
-// stands for it, the profile is taken back first, as a quit does, so that
-// nothing is left pointing into a folder that is not there.
-func removeFolder(dir string) error {
+// removeProfile deletes dir, the folder of profile id, which is gone, unless
+// dir is "". If Claude Code works with the profile, or ~/.claude stands for a
+// folder in dir, it is taken back first, as a quit does, so that nothing is
+// left handing out a token that is gone or pointing into a folder that is not
+// there.
+func removeProfile(id, dir string) error {
 	mu.Lock()
 	defer mu.Unlock()
-	if linked != "" && within(linked, dir) {
+	if linked != "" && (last.Active().ID == id || dir != "" && within(linked, dir)) {
 		revert()
+	}
+	if dir == "" {
+		return nil
 	}
 	return os.RemoveAll(dir)
 }

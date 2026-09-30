@@ -90,6 +90,11 @@ func saveConfig(s Settings) error {
 			storeToken(p.ID, "")
 		}
 	}
+	return writeConfig(s)
+}
+
+// writeConfig writes the config file, with no token in it.
+func writeConfig(s Settings) error {
 	file := s
 	file.Profiles = slices.Clone(s.Profiles)
 	for i := range file.Profiles {

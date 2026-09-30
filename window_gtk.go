@@ -131,11 +131,11 @@ func cpDefaultDir(name, id *C.char) *C.char {
 //export cpDeleteNote
 func cpDeleteNote(id *C.char) *C.char { return C.CString(deleteNote(C.GoString(id))) }
 
-// cpDeleteFolder deletes the folder of a profile the window has just deleted:
+// cpDeleteProfile deletes for good a profile the window has just deleted:
 // "" if it went, or why not.
 //
-//export cpDeleteFolder
-func cpDeleteFolder(id *C.char) *C.char { return C.CString(deleteFolder(C.GoString(id))) }
+//export cpDeleteProfile
+func cpDeleteProfile(id *C.char) *C.char { return C.CString(deleteProfile(C.GoString(id))) }
 
 // cpSetLaunchAtLogin records that the window has registered the app to open at
 // login, so that it never does again.

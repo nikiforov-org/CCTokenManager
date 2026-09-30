@@ -545,7 +545,7 @@ static void cp_delete(GtkButton *b, gpointer data) {
     gint answer = gtk_dialog_run(GTK_DIALOG(d));
     gtk_widget_destroy(d);
     if (answer != GTK_RESPONSE_ACCEPT) return;
-    char *failed = cpDeleteFolder(p->id);
+    char *failed = cpDeleteProfile(p->id);
     if (*failed) cp_alert(failed, FALSE);
     free(failed);
 

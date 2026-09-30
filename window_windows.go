@@ -699,7 +699,7 @@ func command(id, code uintptr) {
 		if !ask(fmt.Sprintf("Delete profile “%s”?", text(ui.name)), deleteNote(ui.profiles[i].ID)) {
 			return
 		}
-		if msg := deleteFolder(ui.profiles[i].ID); msg != "" {
+		if msg := deleteProfile(ui.profiles[i].ID); msg != "" {
 			say(msg, false)
 		}
 		// The tick cannot stay on a profile that is gone, nor move to one that

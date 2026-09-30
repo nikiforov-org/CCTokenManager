@@ -5,7 +5,7 @@ extern char *cpSaveAll(char *profilesJSON, char *activeID);
 extern char *cpTest(char *token);
 extern char *cpApply(char *profilesJSON, char *activeID);
 extern char *cpDeleteNote(char *id);
-extern char *cpDeleteFolder(char *id);
+extern char *cpDeleteProfile(char *id);
 extern void  cpRevert(void);
 extern void  cpSetLaunchAtLogin(void);
 
@@ -279,7 +279,7 @@ static NSString *cp_noise(NSString *token) {
     if ([a runModal] != NSAlertFirstButtonReturn) return;
 
     NSString *goneID = self.rows[row][@"id"];
-    char *failed = cpDeleteFolder((char *)[goneID UTF8String]);
+    char *failed = cpDeleteProfile((char *)[goneID UTF8String]);
     if (*failed) [self alertText:@(failed) ok:NO];
     free(failed);
     [[NSNotificationCenter defaultCenter] removeObserver:self.rows[row][@"watch"]];

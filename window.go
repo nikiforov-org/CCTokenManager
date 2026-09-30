@@ -94,15 +94,29 @@ func deleteNote(id string) string {
 	return "Its token is removed from this app."
 }
 
-// deleteFolder deletes the folder of a profile the window has just deleted,
-// and says why not if it could not.
-func deleteFolder(id string) string {
-	if dir := goingFolder(id); dir != "" {
-		if err := removeFolder(dir); err != nil {
-			return tilde(dir) + " could not be deleted: " + err.Error() + "."
+// deleteProfile deletes a profile the window has just deleted, at once and for
+// good: its folder, its token and its entry in the config file. Everything
+// else on screen stays as it is, saved or not. It says what did not go, or "".
+func deleteProfile(id string) string {
+	var failed []string
+	dir := goingFolder(id)
+	if err := removeProfile(id, dir); err != nil {
+		failed = append(failed, tilde(dir)+" could not be deleted: "+err.Error()+".")
+	}
+	if i := slices.IndexFunc(config.Profiles, func(p Profile) bool { return p.ID == id }); i >= 0 {
+		s := config
+		s.Profiles = slices.Delete(slices.Clone(s.Profiles), i, i+1)
+		if s.ActiveID == id {
+			s.ActiveID = ""
+		}
+		storeToken(id, "")
+		if err := writeConfig(s); err != nil {
+			failed = append(failed, "The profile stays in "+tilde(configPath)+": "+err.Error()+".")
+		} else {
+			config = s
 		}
 	}
-	return ""
+	return strings.Join(failed, " ")
 }
 
 // applyProfile switches Claude Code to the profile as it stands on screen and
